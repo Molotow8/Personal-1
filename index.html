@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personalkalender TG</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Exakte Positions-Offsets gegen Überschneidungen */
+    .sticky-col-1 { position: sticky; left: 0px; z-index: 20; background-color: #f8fafc; width: 110px; min-width: 110px; }
+    .sticky-col-2 { position: sticky; left: 110px; z-index: 20; background-color: #f8fafc; width: 110px; min-width: 110px; }
+    .sticky-col-3 { position: sticky; left: 220px; z-index: 20; background-color: #f8fafc; width: 70px; min-width: 70px; }
+    
+    .selected-cell { outline: 2px solid #2563eb !important; background-color: #dbeafe !important; }
+
+    @media print {
+      body * { visibility: hidden; }
+      #printable-area, #printable-area * { visibility: visible; }
+      #printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans text-xs antialiased text-gray-800 select-none">
+
+  <!-- NAVIGATION BAR -->
+  <header class="bg-slate-800 text-white p-3 no-print flex flex-wrap items-center justify-between gap-3 shadow-md">
+    <div class="flex items-center gap-2">
+      <h1 class="text-base font-bold mr-2">Personalkalender TG</h1>
+      
+      <!-- Jahr Select -->
+      <select id="yearSelect" class="bg-slate-700 text-white px-2 py-1 rounded border border-slate-600 font-semibold" onchange="renderCalendar()">
+        <option value="2025">2025</option>
+        <option value="2026" selected>2026</option>
+        <option value="2027">2027</option>
+      </select>
+
+      <!-- Monat Select -->
+      <select id="monthSelect" class="bg-slate-700 text-white px-2 py-1 rounded border border-slate-600 font-semibold" onchange="jumpToMonth()">
+        <option value="all">Alle Monate (Ganzjahr)</option>
+        <option value="0">Januar</option>
+        <option value="1">Februar</option>
+        <option value="2">März</option>
+        <option value="3">April</option>
+        <option value="4">Mai</option>
+        <option value="5">Juni</option>
+        <option value="6">Juli</option>
+        <option value="7">August</option>
+        <option value="8">September</option>
+        <option value="9">Oktober</option>
+        <option value="10">November</option>
+        <option value="11">Dezember</option>
+      </select>
+    </div>
+
+    <!-- VIEW SWITCHER -->
+    <div class="flex items-center gap-1 bg-slate-700 p-1 rounded">
+      <span class="text-slate-300 font-medium px-1">Ansicht:</span>
+      <button onclick="setViewMode('3days')" class="px-2 py-1 rounded hover:bg-slate-600">3 Tage</button>
+      <button onclick="setViewMode('5days')" class="px-2 py-1 rounded hover:bg-slate-600">5 Tage</button>
+      <button onclick="setViewMode('7days')" class="px-2 py-1 rounded hover:bg-slate-600">7 Tage</button>
+      <button onclick="setViewMode('month')" class="px-2 py-1 rounded hover:bg-slate-600">Monat</button>
+      <button onclick="setViewMode('full')" class="px-2 py-1 rounded bg-blue-600 font-bold">Ganzjahr</button>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="flex items-center gap-2">
+      <button onclick="addEmployee()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded font-medium">+ Mitarbeiter</button>
+      <button onclick="addProject()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded font-medium">+ Projekt</button>
+      <button onclick="saveData()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded font-medium">💾 Speichern</button>
+      <button onclick="loadData()" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded font-medium">📂 Laden</button>
+      <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded font-medium">🖨️ Drucken</button>
+    </div>
+  </header>
+
+  <!-- BATCH SELECTION ACTION BAR -->
+  <div id="selectionBar" class="hidden bg-blue-950 text-white p-2 px-4 flex flex-wrap items-center justify-between gap-3 border-b-2 border-blue-400 no-print shadow-inner">
+    <div class="flex items-center gap-2">
+      <span class="font-bold text-yellow-400" id="selectedCount">0 Felder markiert</span>
+      <span class="text-xs text-blue-200">| Aktion ausführen:</span>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap">
+      <button onclick="applyBatchValue('Ferien')" class="bg-yellow-300 text-yellow-950 font-bold px-3 py-1 rounded hover:bg-yellow-200">🌴 Ferien zuweisen</button>
+      <button onclick="applyBatchValue('Frühschicht')" class="bg-amber-200 text-amber-900 font-bold px-2 py-1 rounded hover:bg-amber-100">Frühschicht</button>
+      <button onclick="applyBatchValue('Spätschicht')" class="bg-orange-400 text-white font-bold px-2 py-1 rounded hover:bg-orange-300">Spätschicht</button>
+      <button onclick="applyBatchValue('Schule')" class="bg-emerald-500 text-white font-bold px-2 py-1 rounded hover:bg-emerald-400">Schule</button>
+      <button onclick="applyBatchValue('')" class="bg-slate-700 text-white px-2 py-1 rounded hover:bg-slate-600">Leeren</button>
+
+      <!-- Freier Text Zuweisung & Merken -->
+      <div class="flex items-center gap-1 border-l border-slate-600 pl-2">
+        <input type="text" id="customTextInput" placeholder="Eigener Text..." class="bg-slate-800 text-white px-2 py-1 rounded border border-slate-600 text-xs w-32 focus:outline-none focus:border-blue-400" />
+        <button onclick="applyBatchCustomText()" class="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded font-medium">Setzen</button>
+      </div>
+
+      <button onclick="clearSelection()" class="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded ml-2 font-bold">✕ Markierung aufheben</button>
+    </div>
+  </div>
+
+  <!-- TABLE CONTAINER -->
+  <div id="printable-area" class="overflow-auto max-h-[82vh] p-2 bg-gray-200">
+    <div class="inline-block min-w-full bg-white shadow rounded border border-gray-400">
+      <table class="border-collapse w-full text-center" id="calendarTable">
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- VACATION COUNTER MODAL -->
+  <div id="modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative">
+      <h3 class="text-lg font-bold text-gray-800 mb-1" id="modalName"></h3>
+      <p class="text-sm text-gray-600 mb-4" id="modalEmpNo"></p>
+
+      <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200 flex items-center justify-between">
+        <label class="font-medium text-gray-700">Jahresanspruch (Tage):</label>
+        <input type="number" id="modalEntitlementInput" class="w-20 p-1 border rounded text-center font-bold" onchange="updateEntitlementFromModal()" />
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 text-center mb-6">
+        <div class="bg-blue-50 p-3 rounded border border-blue-200">
+          <div class="text-xs text-blue-600 font-medium">Anspruch</div>
+          <div class="text-xl font-bold text-blue-900" id="modalEntitlement">25 Tage</div>
+        </div>
+        <div class="bg-yellow-50 p-3 rounded border border-yellow-200">
+          <div class="text-xs text-yellow-700 font-medium">Nur 'Ferien'</div>
+          <div class="text-xl font-bold text-yellow-900" id="modalUsed">0 Tage</div>
+        </div>
+        <div class="bg-emerald-50 p-3 rounded border border-emerald-200">
+          <div class="text-xs text-emerald-600 font-medium">Restanspruch</div>
+          <div class="text-xl font-bold text-emerald-900" id="modalRemaining">25 Tage</div>
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button onclick="closeModal()" class="bg-slate-800 text-white px-4 py-2 rounded text-sm hover:bg-slate-700">Schliessen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let shiftOptions = ['', 'Frühschicht', 'Spätschicht', 'Nachtschicht', 'Ferien', 'Schule', 'Schnupperlehrling', 'Simon/ Jose', 'Jose/ Walter', 'Walter/ Simon', 'Feiertag', 'Krankheit'];
+    
+    const COLOR_MAP = {
+      'Frühschicht': 'bg-amber-300 text-amber-950 font-bold',
+      'Spätschicht': 'bg-orange-400 text-white font-bold',
+      'Nachtschicht': 'bg-indigo-500 text-white font-bold',
+      'Ferien': 'bg-yellow-300 text-yellow-950 font-bold',
+      'Schule': 'bg-emerald-500 text-white font-bold',
+      'Schnupperlehrling': 'bg-cyan-400 text-cyan-950 font-bold',
+      'Simon/ Jose': 'bg-rose-400 text-white font-bold',
+      'Jose/ Walter': 'bg-sky-400 text-sky-950 font-bold',
+      'Walter/ Simon': 'bg-lime-400 text-lime-950 font-bold',
+      'Feiertag': 'bg-orange-600 text-white font-bold',
+      'Krankheit': 'bg-red-400 text-white font-bold'
+    };
+
+    function getDynamicColor(text) {
+      if (!text) return 'bg-white text-gray-800';
+      if (COLOR_MAP[text]) return COLOR_MAP[text];
+
+      let hash = 0;
+      for (let i = 0; i < text.length; i++) {
+        hash = text.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      
+      const bgColors = [
+        'bg-pink-500 text-white font-bold',
+        'bg-purple-500 text-white font-bold',
+        'bg-violet-500 text-white font-bold',
+        'bg-blue-600 text-white font-bold',
+        'bg-teal-500 text-white font-bold',
+        'bg-emerald-600 text-white font-bold',
+        'bg-amber-500 text-white font-bold',
+        'bg-rose-600 text-white font-bold',
+        'bg-fuchsia-600 text-white font-bold',
+        'bg-cyan-600 text-white font-bold'
+      ];
+      
+      const index = Math.abs(hash) % bgColors.length;
+      return bgColors[index];
+    }
+
+    const SWISS_HOLIDAYS_TG = {
+      '2026-01-01': 'Neujahr', '2026-01-02': 'Berchtoldstag', '2026-04-03': 'Karfreitag',
+      '2026-04-06': 'Ostermontag', '2026-05-14': 'Auffahrt', '2026-05-25': 'Pfingstmontag',
+      '2026-08-01': 'Nationalfeiertag', '2026-12-25': 'Weihnachten', '2026-12-26': 'Stephanstag'
+    };
+
+    const SCHOOL_HOLIDAYS_TG = [
+      { start: '2026-01-26', end: '2026-01-30' },
+      { start: '2026-04-06', end: '2026-04-17' },
+      { start: '2026-07-06', end: '2026-08-07' },
+      { start: '2026-10-05', end: '2026-10-16' },
+      { start: '2026-12-21', end: '2027-01-01' }
+    ];
+
+    let EMPLOYEES = [
+      { id: 1, firstName: 'Fritz', lastName: 'Aeberhardt', empNo: '6053', entitlement: 25 },
+      { id: 2, firstName: 'Simon', lastName: 'Oehri', empNo: '6058', entitlement: 25 },
+      { id: 3, firstName: 'Walter', lastName: 'Arnold', empNo: '6088', entitlement: 25 },
+      { id: 4, firstName: 'Reto', lastName: 'Müller', empNo: '6073', entitlement: 25 },
+      { id: 5, firstName: 'José', lastName: 'Casal', empNo: '6056', entitlement: 25 },
+      { id: 6, firstName: 'Lukas', lastName: 'Müller', empNo: '6055', entitlement: 25 },
+      { id: 7, firstName: 'Daniel', lastName: 'Wirz', empNo: '6076', entitlement: 25 },
+      { id: 8, firstName: 'Ruedi', lastName: 'Dietrich', empNo: '6089', entitlement: 25 },
+      { id: 9, firstName: 'Werner', lastName: 'Schälchli', empNo: '6052', entitlement: 25 },
+      { id: 10, firstName: 'Mike', lastName: 'Niederer', empNo: '6068', entitlement: 25 },
+      { id: 11, firstName: 'Martin', lastName: 'Ogorek', empNo: '6849', entitlement: 25 },
+      { id: 12, firstName: 'Seam', lastName: 'Steffen', empNo: '6855', entitlement: 25 },
+      { id: 13, firstName: 'Lukas', lastName: 'Möri', empNo: '6856', entitlement: 25 },
+      { id: 14, firstName: 'Externer', lastName: 'Mitarbeiter', empNo: 'EXT1', entitlement: 0 },
+      { id: 15, firstName: 'Nele', lastName: 'Krastel', empNo: 'AZ1', entitlement: 20 },
+      { id: 16, firstName: 'David', lastName: 'Rodrigues Rocha', empNo: 'AZ2', entitlement: 20 },
+      { id: 17, firstName: 'Roberto', lastName: 'Tanase', empNo: 'AZ3', entitlement: 20 },
+      { id: 18, firstName: 'Frederik', lastName: 'Markgraf', empNo: 'AZ4', entitlement: 20 }
+    ];
+
+    let gridData = {}; 
+    let infoRow = {};
+    let dailyShifts = {};
+    let projects = ['neue Hofhalle'];
+    let projectData = {}; 
+    let viewMode = 'full';
+    let selectedCells = new Set();
+    let isMouseDown = false;
+    let activeEmpModalId = null;
+
+    function getDates(year) {
+      const dates = [];
+      let curr = new Date(year, 0, 1);
+      const end = new Date(year + 1, 0, 15);
+      
+      while (curr <= end) {
+        const dayNum = curr.getDay();
+        if (dayNum !== 0 && dayNum !== 6) { 
+          const y = curr.getFullYear();
+          const m = String(curr.getMonth() + 1).padStart(2, '0');
+          const d = String(curr.getDate()).padStart(2, '0');
+          const dateStr = `${y}-${m}-${d}`;
+          const dayNames = ['So', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Sa'];
+          
+          const target = new Date(curr.valueOf());
+          const dayNr = (curr.getDay() + 6) % 7;
+          target.setDate(target.getDate() - dayNr + 3);
+          const firstThursday = target.valueOf();
+          target.setMonth(0, 1);
+          if (target.getDay() !== 4) target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+          const kw = String(1 + Math.ceil((firstThursday - target) / 604800000)).padStart(2, '0');
+          
+          dates.push({
+            dateStr,
+            month: curr.getMonth(),
+            dayName: dayNames[dayNum],
+            dayFormatted: `${d}.${m}.${y}`,
+            kw,
+            isHoliday: SWISS_HOLIDAYS_TG[dateStr] || null
+          });
+        }
+        curr.setDate(curr.getDate() + 1);
+      }
+      return dates;
+    }
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      document.getElementById('monthSelect').value = 'all';
+      renderCalendar();
+    }
+
+    function jumpToMonth() {
+      const val = document.getElementById('monthSelect').value;
+      if (val === 'all') {
+        viewMode = 'full';
+      } else {
+        viewMode = 'month_specific';
+      }
+      renderCalendar();
+    }
+
+    function renderCalendar() {
+      const year = parseInt(document.getElementById('yearSelect').value);
+      let dates = getDates(year);
+
+      const monthVal = document.getElementById('monthSelect').value;
+      if (viewMode === 'month_specific' && monthVal !== 'all') {
+        const mIdx = parseInt(monthVal);
+        dates = dates.filter(d => d.month === mIdx);
+      } else {
+        if (viewMode === '3days') dates = dates.slice(0, 3);
+        if (viewMode === '5days') dates = dates.slice(0, 5);
+        if (viewMode === '7days') dates = dates.slice(0, 7);
+        if (viewMode === 'month') dates = dates.slice(0, 22);
+      }
+
+      // --- HEADER RENDERING ---
+      let headHTML = `<tr class="bg-gray-100 border-b border-gray-400 font-bold text-gray-700">
+        <th class="sticky-col-1 border-r border-gray-400 p-1">Vorname</th>
+        <th class="sticky-col-2 border-r border-gray-400 p-1">Nachname</th>
+        <th class="sticky-col-3 border-r-2 border-gray-800 p-1">Pers.-Nr.</th>`;
+
+      let currentKw = '';
+      let kwSpan = 0;
+      const kwGroups = [];
+      dates.forEach(d => {
+        if (d.kw !== currentKw) {
+          if (currentKw !== '') kwGroups.push({ kw: currentKw, span: kwSpan });
+          currentKw = d.kw;
+          kwSpan = 1;
+        } else {
+          kwSpan++;
+        }
+      });
+      if (kwSpan > 0) kwGroups.push({ kw: currentKw, span: kwSpan });
+
+      kwGroups.forEach(k => {
+        headHTML += `<th colSpan="${k.span}" class="border-r-2 border-gray-800 bg-slate-200 py-1 text-center text-xs">KW ${k.kw}</th>`;
+      });
+
+      headHTML += `</tr><tr class="bg-gray-50 border-b border-gray-300 font-semibold text-gray-600">
+        <th class="sticky-col-1 border-r border-gray-400"></th>
+        <th class="sticky-col-2 border-r border-gray-400"></th>
+        <th class="sticky-col-3 border-r-2 border-gray-800"></th>`;
+
+      dates.forEach(d => {
+        headHTML += `<th class="border-r border-gray-300 min-w-[85px] max-w-[85px] p-1 text-[11px] ${d.isHoliday ? 'bg-orange-200 text-orange-950 font-bold' : ''}">${d.dayName}</th>`;
+      });
+
+      headHTML += `</tr><tr class="bg-white border-b-2 border-gray-800 font-bold text-gray-900">
+        <th class="sticky-col-1 border-r border-gray-400 p-1"></th>
+        <th class="sticky-col-2 border-r border-gray-400 p-1"></th>
+        <th class="sticky-col-3 border-r-2 border-gray-800 p-1"></th>`;
+
+      dates.forEach(d => {
+        headHTML += `<th class="border-r border-gray-300 p-1 text-[10px] ${d.isHoliday ? 'bg-orange-300 text-orange-950' : ''}">${d.dayFormatted}</th>`;
+      });
+
+      // Infozeile
+      headHTML += `</tr><tr class="bg-amber-50 border-b-2 border-gray-600 font-semibold">
+        <th colSpan="3" class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-amber-900">Infozeile</th>`;
+      
+      dates.forEach(d => {
+        const val = infoRow[d.dateStr] || '';
+        headHTML += `<td class="border-r border-gray-300 p-0">
+          <input type="text" value="${val}" onchange="infoRow['${d.dateStr}']=this.value" class="w-full h-full text-xs text-center bg-transparent border-none focus:outline-none" />
+        </td>`;
+      });
+      headHTML += `</tr>`;
+
+      document.getElementById('tableHead').innerHTML = headHTML;
+
+      // --- BODY RENDERING ---
+      let bodyHTML = '';
+
+      EMPLOYEES.forEach((emp) => {
+        bodyHTML += `<tr class="border-b border-gray-300 hover:bg-slate-50">
+          <td class="sticky-col-1 border-r border-gray-400 text-left px-1 py-1">
+            <input type="text" value="${emp.firstName}" onchange="updateEmp(${emp.id}, 'firstName', this.value)" class="w-full bg-transparent font-medium text-blue-800 focus:outline-none text-xs" />
+          </td>
+          <td class="sticky-col-2 border-r border-gray-400 text-left px-1 py-1 flex items-center justify-between">
+            <input type="text" value="${emp.lastName}" onchange="updateEmp(${emp.id}, 'lastName', this.value)" class="w-full bg-transparent text-blue-800 focus:outline-none cursor-pointer text-xs" />
+            <button onclick="openModal(${emp.id})" class="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-800 px-1 py-0.5 rounded ml-1 font-bold no-print" title="Ferien-Zähler öffnen">📊</button>
+          </td>
+          <td class="sticky-col-3 border-r-2 border-gray-800 text-center font-mono text-gray-500 py-1">
+            <input type="text" value="${emp.empNo}" onchange="updateEmp(${emp.id}, 'empNo', this.value)" class="w-full text-center bg-transparent focus:outline-none text-xs" />
+          </td>`;
+
+        dates.forEach(d => {
+          const cellKey = `${emp.id}_${d.dateStr}`;
+          const val = gridData[cellKey] || (d.isHoliday ? 'Feiertag' : '');
+          
+          let bgClass = getDynamicColor(val);
+          if (!val && d.isHoliday) {
+            bgClass = 'bg-orange-100 text-orange-900 font-semibold';
+          }
+          
+          const isSelected = selectedCells.has(cellKey);
+
+          bodyHTML += `<td 
+            id="cell_${cellKey}"
+            onmousedown="handleCellMouseDown('${cellKey}')"
+            onmouseenter="handleCellMouseEnter('${cellKey}')"
+            class="border-r border-gray-300 p-0 h-7 ${bgClass} ${isSelected ? 'selected-cell' : ''} relative select-none">
+            <input type="text" list="shiftsList" value="${val}" onchange="updateCell(${emp.id}, '${d.dateStr}', this.value)" class="w-full h-full text-xs font-bold bg-transparent border-none text-center focus:outline-none" placeholder="" />
+          </td>`;
+        });
+        bodyHTML += `</tr>`;
+      });
+
+      // Trennlinie
+      bodyHTML += `<tr class="bg-gray-800 h-2"><td colSpan="${dates.length + 3}"></td></tr>`;
+
+      // Tages-Schichten Row
+      bodyHTML += `<tr class="bg-amber-100 font-bold border-b border-gray-400">
+        <td colSpan="3" class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-gray-900 font-bold">Tages- Schichten</td>`;
+      dates.forEach(d => {
+        const val = dailyShifts[d.dateStr] || '';
+        const bgClass = getDynamicColor(val);
+        bodyHTML += `<td class="border-r border-gray-300 p-0 ${bgClass}">
+          <input type="text" list="shiftsList" value="${val}" onchange="dailyShifts['${d.dateStr}']=this.value; renderCalendar();" class="w-full h-full text-xs text-center bg-transparent border-none focus:outline-none font-bold" />
+        </td>`;
+      });
+      bodyHTML += `</tr>`;
+
+      // Schulferien TG Row
+      bodyHTML += `<tr class="bg-yellow-100 font-bold border-b-2 border-gray-800">
+        <td colSpan="3" class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-yellow-950">Schulferien TG</td>`;
+      dates.forEach(d => {
+        const isFerien = SCHOOL_HOLIDAYS_TG.some(h => d.dateStr >= h.start && d.dateStr <= h.end);
+        bodyHTML += `<td class="border-r border-gray-300 p-1 text-[10px] text-center ${isFerien ? 'bg-yellow-300 text-yellow-950 font-bold' : ''}">${isFerien ? 'Ferien' : ''}</td>`;
+      });
+      bodyHTML += `</tr>`;
+
+      // Projekte Header
+      bodyHTML += `<tr class="bg-slate-200 font-bold"><td colSpan="3" class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-slate-800">Projekte:</td><td colSpan="${dates.length}"></td></tr>`;
+      
+      projects.forEach(proj => {
+        bodyHTML += `<tr class="border-b border-gray-300 bg-white">
+          <td colSpan="3" class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 font-medium text-gray-700 bg-gray-50 flex items-center justify-between">
+            <span contenteditable="true" onblur="renameProject('${proj}', this.innerText)" class="focus:outline-none border-b border-dotted border-gray-400">${proj}</span>
+            <button onclick="removeProject('${proj}')" class="text-red-500 font-bold text-xs ml-1 no-print">×</button>
+          </td>`;
+        dates.forEach(d => {
+          const pKey = `${proj}_${d.dateStr}`;
+          const val = projectData[pKey] || '';
+          bodyHTML += `<td class="border-r border-gray-300 p-0">
+            <input type="text" value="${val}" onchange="projectData['${proj}_${d.dateStr}']=this.value" class="w-full h-full text-xs text-center bg-transparent border-none focus:outline-none font-medium" />
+          </td>`;
+        });
+        bodyHTML += `</tr>`;
+      });
+
+      document.getElementById('tableBody').innerHTML = bodyHTML;
+      updateSelectionBar();
+      updateDatalist();
+    }
+
+    // MULTI-SELECTION LOGIC
+    window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+    function handleCellMouseDown(key) {
+      isMouseDown = true;
+      if (selectedCells.has(key)) {
+        selectedCells.delete(key);
+      } else {
+        selectedCells.add(key);
+      }
+      renderCalendar();
+    }
+
+    function handleCellMouseEnter(key) {
+      if (isMouseDown) {
+        selectedCells.add(key);
+        renderCalendar();
+      }
+    }
+
+    function clearSelection() {
+      selectedCells.clear();
+      renderCalendar();
+    }
+
+    function updateSelectionBar() {
+      const bar = document.getElementById('selectionBar');
+      if (selectedCells.size > 0) {
+        bar.classList.remove('hidden');
+        document.getElementById('selectedCount').innerText = `${selectedCells.size} Feld(er) markiert`;
+      } else {
+        bar.classList.add('hidden');
+      }
+    }
+
+    function applyBatchValue(val) {
+      selectedCells.forEach(key => {
+        gridData[key] = val;
+      });
+      if (val && !shiftOptions.includes(val)) {
+        shiftOptions.push(val);
+      }
+      renderCalendar();
+    }
+
+    function applyBatchCustomText() {
+      const txt = document.getElementById('customTextInput').value.trim();
+      if (txt) {
+        if (!shiftOptions.includes(txt)) shiftOptions.push(txt);
+        applyBatchValue(txt);
+      }
+    }
+
+    function updateDatalist() {
+      let datalist = document.getElementById('shiftsList');
+      if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = 'shiftsList';
+        document.body.appendChild(datalist);
+      }
+      datalist.innerHTML = '';
+      shiftOptions.forEach(opt => {
+        if (opt) {
+          const el = document.createElement('option');
+          el.value = opt;
+          datalist.appendChild(el);
+        }
+      });
+    }
+
+    function updateCell(empId, dateStr, val) {
+      const key = `${empId}_${dateStr}`;
+      gridData[key] = val;
+      if (val && !shiftOptions.includes(val)) {
+        shiftOptions.push(val);
+      }
+      renderCalendar();
+    }
+
+    function updateEmp(id, field, val) {
+      const emp = EMPLOYEES.find(e => e.id === id);
+      if (emp) emp[field] = val;
+    }
+
+    function addEmployee() {
+      const newId = EMPLOYEES.length > 0 ? Math.max(...EMPLOYEES.map(e => e.id)) + 1 : 1;
+      EMPLOYEES.push({ id: newId, firstName: 'Neu', lastName: 'Mitarbeiter', empNo: String(6000 + newId), entitlement: 25 });
+      renderCalendar();
+    }
+
+    function addProject() {
+      const name = prompt('Projektname eingeben:');
+      if (name && !projects.includes(name)) {
+        projects.push(name);
+        renderCalendar();
+      }
+    }
+
+    function renameProject(oldName, newName) {
+      if (!newName || oldName === newName) return;
+      projects = projects.map(p => p === oldName ? newName : p);
+      Object.keys(projectData).forEach(k => {
+        if (k.startsWith(oldName + '_')) {
+          const datePart = k.split('_')[1];
+          projectData[`${newName}_${datePart}`] = projectData[k];
+          delete projectData[k];
+        }
+      });
+      renderCalendar();
+    }
+
+    function removeProject(name) {
+      if (confirm(`Projekt "${name}" wirklich löschen?`)) {
+        projects = projects.filter(p => p !== name);
+        renderCalendar();
+      }
+    }
+
+    function openModal(empId) {
+      activeEmpModalId = empId;
+      const emp = EMPLOYEES.find(e => e.id === empId);
+      
+      let usedFerienCount = 0;
+      Object.keys(gridData).forEach(k => {
+        if (k.startsWith(`${empId}_`) && gridData[k] === 'Ferien') {
+          usedFerienCount++;
+        }
+      });
+
+      document.getElementById('modalName').innerText = `${emp.firstName} ${emp.lastName}`;
+      document.getElementById('modalEmpNo').innerText = `Pers.-Nr: ${emp.empNo}`;
+      document.getElementById('modalEntitlementInput').value = emp.entitlement;
+      document.getElementById('modalEntitlement').innerText = `${emp.entitlement} Tage`;
+      document.getElementById('modalUsed').innerText = `${usedFerienCount} Tage`;
+      document.getElementById('modalRemaining').innerText = `${emp.entitlement - usedFerienCount} Tage`;
+      document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function updateEntitlementFromModal() {
+      if (!activeEmpModalId) return;
+      const emp = EMPLOYEES.find(e => e.id === activeEmpModalId);
+      const val = parseInt(document.getElementById('modalEntitlementInput').value) || 0;
+      emp.entitlement = val;
+      openModal(activeEmpModalId);
+    }
+
+    function closeModal() {
+      activeEmpModalId = null;
+      document.getElementById('modal').classList.add('hidden');
+    }
+
+    function saveData() {
+      const payload = { EMPLOYEES, gridData, infoRow, dailyShifts, projects, projectData, shiftOptions };
+      localStorage.setItem('personalkalender_full_v4', JSON.stringify(payload));
+      alert('Alle Daten erfolgreich gespeichert!');
+    }
+
+    function loadData() {
+      const raw = localStorage.getItem('personalkalender_full_v4');
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.EMPLOYEES) EMPLOYEES = data.EMPLOYEES;
+        if (data.gridData) gridData = data.gridData;
+        if (data.infoRow) infoRow = data.infoRow;
+        if (data.dailyShifts) dailyShifts = data.dailyShifts;
+        if (data.projects) projects = data.projects;
+        if (data.projectData) projectData = data.projectData;
+        if (data.shiftOptions) shiftOptions = data.shiftOptions;
+        renderCalendar();
+        alert('Daten erfolgreich geladen!');
+      } else {
+        alert('Keine gespeicherten Daten gefunden.');
+      }
+    }
+
+    renderCalendar();
+  </script>
+</body>
+</html>
